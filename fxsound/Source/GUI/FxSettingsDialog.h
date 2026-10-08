@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "FxAudioSlider.h"
 #include "FxBalanceSlider.h"
 #include "FxOutputPreference.h"
+#include "FxComboBox.h"
 
 //==============================================================================
 /*
@@ -88,7 +89,7 @@ private:
 		String name_;
 	};
 
-	class AudioSettingsPane : public SettingsPane
+	class AudioSettingsPane : public SettingsPane, public FxModel::Listener
 	{
 	public:
 		AudioSettingsPane();
@@ -107,10 +108,14 @@ private:
 		static constexpr int RESET_PRESETS_BUTTON_WIDTH = 220;
 		static constexpr int BUTTON_HEIGHT = 24;
 		static constexpr int MAX_BUTTON_WIDTH = 315;
+		static constexpr int ROUTE_ROW_HEIGHT = 28;
+		static constexpr int ROUTE_LABEL_WIDTH = 170;
 
 		void setText();
 		void resizeResetButton(int x, int y);
+		void updateRoutes();
 
+		void modelChanged(FxModel::Event model_event) override;
 		void visibilityChanged() override;
 		void mouseEnter(const MouseEvent& mouse_event) override;
 		void mouseExit(const MouseEvent& mouse_event) override;
@@ -122,6 +127,13 @@ private:
 		TextButton reset_presets_button_;
 
 		juce::Rectangle<float> output_preference_bounds_;
+
+		// Extra FxSound devices and the output each one plays to
+		Label routes_title_;
+		OwnedArray<Label> route_labels_;
+		OwnedArray<FxComboBox> route_outputs_;
+		TextButton add_fx_device_button_;
+		juce::Rectangle<float> routes_bounds_;
 	};
 
 	class GeneralSettingsPane : public SettingsPane
@@ -188,7 +200,7 @@ private:
 	{
 	public:
         static constexpr int WIDTH = 600;
-        static constexpr int HEIGHT = 510;
+        static constexpr int HEIGHT = 640;
 
 		SettingsComponent();
         ~SettingsComponent() = default;

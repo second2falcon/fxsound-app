@@ -56,6 +56,7 @@ int PT_DECLSPEC sndDevices_GetAll(PT_HANDLE* hp_sndDevices, int* ip_num_devices)
 	int i_found_start_location;
 	int i_found_dfx_string;
 	int resultFlag;
+	BOOL isDfxDevice[SND_DEVICES_MAX_NUM_DEVICES] = {};
 
 	EDataFlow flow = eRender;
 	ERole role = eMultimedia;
@@ -244,7 +245,21 @@ int PT_DECLSPEC sndDevices_GetAll(PT_HANDLE* hp_sndDevices, int* ip_num_devices)
 				SND_DEVICES_SET_STATUS_AND_RETURN_OK(SND_DEVICES_INSTANCE_CREATE_FAILED);
 			}
 			if (i_found_dfx_string)
-				cast_handle->dfxDeviceNum = i;
+			{
+				isDfxDevice[i] = TRUE;
+
+				// There can be extra FxSound devices that AudioPassthru routes to other outputs, those are
+				// never the main DFX device. Among the rest prefer the current default so the choice is stable.
+				BOOL isRouteDevice = FALSE;
+				for (k = 0; k < cast_handle->numRouteDevices; k++)
+				{
+					if (wcscmp(cast_handle->pwszID[i], cast_handle->routeDeviceIDs[k]) == 0)
+						isRouteDevice = TRUE;
+				}
+				if (!isRouteDevice &&
+					(cast_handle->dfxDeviceNum == SND_DEVICES_DEVICE_NOT_PRESENT || (pwszIDdefault != NULL && wcscmp(cast_handle->pwszID[i], pwszIDdefault) == 0)))
+					cast_handle->dfxDeviceNum = i;
+			}
 
 			hr = cast_handle->pAllDevices[i]->GetState(&cast_handle->deviceState[i]);
 			if (FAILED(hr))
@@ -268,11 +283,12 @@ int PT_DECLSPEC sndDevices_GetAll(PT_HANDLE* hp_sndDevices, int* ip_num_devices)
 
 	// -------------------------------------------------------------------------
 	// Pass 2: Now that dfxDeviceNum is fully resolved, classify all non-DFX
-	//         devices as real playback devices.
+	//         devices as real playback devices. Extra FxSound devices are not
+	//         real either, playing the main DFX device into one would loop.
 	// -------------------------------------------------------------------------
 	for (i = 0; i < deviceCount; i++)
 	{
-		if ((int)i != cast_handle->dfxDeviceNum)
+		if ((int)i != cast_handle->dfxDeviceNum && !isDfxDevice[i])
 		{
 			cast_handle->pwszIDRealDevices[cast_handle->numRealDevices] = cast_handle->pwszID[i];
 			cast_handle->deviceFriendlyNameRealDevices[cast_handle->numRealDevices] = cast_handle->deviceFriendlyName[i];

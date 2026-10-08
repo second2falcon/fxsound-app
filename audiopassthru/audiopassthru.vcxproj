@@ -225,6 +225,7 @@
   <ItemGroup>
     <ClCompile Include="src\AudioPassthru\AudioPassthru.cpp" />
     <ClCompile Include="src\AudioPassthru\AudioPassthruPrivate.cpp" />
+    <ClCompile Include="src\AudioPassthru\AudioRoute.cpp" />
     <ClCompile Include="src\FILE\FileDate.cpp" />
     <ClCompile Include="src\FILE\FileGeneral.cpp" />
     <ClCompile Include="src\FILE\fileWin32Handle.cpp" />

@@ -195,6 +195,9 @@
     <ClCompile Include="src\AudioPassthru\AudioPassthruPrivate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\AudioPassthru\AudioRoute.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\File.h">

@@ -142,6 +142,13 @@ public:
     bool isNewOutputPrioritized();
     void setNewOutputPrioritized(bool prioritize_new_devices);
 
+	// Extra FxSound devices, each played through the same effects to another output.
+	std::vector<SoundDevice> getExtraFxSoundDevices();
+	const std::vector<SoundDevice>& getActiveOutputDevices() { return active_output_devices_; }
+	String getRouteOutput(const String& fx_device_id);
+	void setRouteOutput(const String& fx_device_id, const String& output_device_id);
+	bool addFxSoundDevice();
+
 	FxThemeMode getThemeMode();
 	void setThemeMode(FxThemeMode mode);
 
@@ -238,6 +245,7 @@ private:
 	void sortByDeviceConfigPriority(std::vector<SoundDevice>& devices);
 
 	void powerOn(bool on);
+	void applyRoutes();
 
 	String getAutoSavePath() const;
     String getAutoSavePresetPath(const String& preset_name) const;

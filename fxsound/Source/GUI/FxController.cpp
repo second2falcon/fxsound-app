@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../Utils/SysInfo/SysInfo.h"
 #include <iostream>
 #include <cstdio>
+#include <shellapi.h>
 
 class FxDeviceErrorMessage : public FxWindow
 {
@@ -701,6 +702,10 @@ void FxController::init(FxMainWindow* main_window, FxSystemTrayView* system_tray
 		audio_passthru_ = audio_passthru;
 		system_tray_view_ = system_tray_view;
 
+		// Routes are set before init() so their FxSound devices are never taken as the main FxSound device.
+		audio_passthru_->setDspProcessingModule(&dfx_dsp_);
+		applyRoutes();
+
 		if (audio_passthru_->init() != 0)
 		{
 			String message(TRANS("Error in system audio configuration. Unable to run FxSound"));
@@ -722,7 +727,6 @@ void FxController::init(FxMainWindow* main_window, FxSystemTrayView* system_tray
 			settings_.setBool("run_minimized", false);
 		}
 
-		audio_passthru_->setDspProcessingModule(&dfx_dsp_);
 		output_devices_ = audio_passthru_->getSoundDevices(false);
 		initOutputs(output_devices_);
 
@@ -2750,6 +2754,70 @@ bool FxController::isNewOutputPrioritized()
 void FxController::setNewOutputPrioritized(bool prioritize)
 {
 	settings_.setBool("prioritize_new_output", prioritize);
+}
+
+std::vector<SoundDevice> FxController::getExtraFxSoundDevices()
+{
+	std::vector<SoundDevice> fx_devices;
+	for (auto& device : audio_passthru_->getSoundDevices())
+	{
+		// FxSound devices other than the main one are neither real nor the DFX device, see sndDevices_GetAll().
+		if (!device.isRealDevice && !device.isDFXDevice)
+			fx_devices.push_back(device);
+	}
+	return fx_devices;
+}
+
+// Routes are stored as {"<FxSound device ID>": "<output device ID>", ...}
+void FxController::applyRoutes()
+{
+	std::vector<std::pair<std::wstring, std::wstring>> routes;
+	if (auto* routes_obj = settings_.getJson("output_routes").getDynamicObject())
+	{
+		for (auto& route : routes_obj->getProperties())
+			routes.emplace_back(route.name.toString().toWideCharPointer(), route.value.toString().toWideCharPointer());
+	}
+	audio_passthru_->setRoutes(routes);
+}
+
+String FxController::getRouteOutput(const String& fx_device_id)
+{
+	return settings_.getJson("output_routes")[Identifier(fx_device_id)].toString();
+}
+
+void FxController::setRouteOutput(const String& fx_device_id, const String& output_device_id)
+{
+	auto routes = settings_.getJson("output_routes");
+	if (!routes.isObject())
+		routes = var(new DynamicObject());
+
+	if (output_device_id.isEmpty())
+		routes.getDynamicObject()->removeProperty(fx_device_id);
+	else
+		routes.getDynamicObject()->setProperty(fx_device_id, output_device_id);
+
+	settings_.setJson("output_routes", routes);
+	applyRoutes();
+}
+
+// Installs one more instance of the FxSound driver, the same way the installer installs the first one.
+// Each instance is another FxSound device. Asks for admin rights, returns false if that was refused or fxdevcon wasn't found.
+bool FxController::addFxSoundDevice()
+{
+	auto drivers_dir = File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Drivers").getChildFile("win10");
+	for (auto arch : { "x64", "arm64" })
+	{
+		auto driver_dir = drivers_dir.getChildFile(arch);
+		auto fxdevcon = driver_dir.getChildFile("fxdevcon64.exe");
+		if (fxdevcon.existsAsFile())
+		{
+			auto params = "install \"" + driver_dir.getChildFile("fxvad.inf").getFullPathName() + "\" root\\fxvad";
+			auto result = ShellExecuteW(NULL, L"runas", fxdevcon.getFullPathName().toWideCharPointer(), params.toWideCharPointer(),
+				driver_dir.getFullPathName().toWideCharPointer(), SW_HIDE);
+			return (INT_PTR)result > 32;
+		}
+	}
+	return false;
 }
 
 FxThemeMode FxController::getThemeMode()

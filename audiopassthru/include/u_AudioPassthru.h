@@ -25,12 +25,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Mmdeviceapi.h>
 #include <vector> 
 #include <map>
+#include <atomic>
+#include <memory>
+#include <thread>
 
 class DspProcessingModule
 {
 public:
 	virtual int setSignalFormat(int i_bps, int i_nch, int i_srate, int i_valid_bits) = 0;
 	virtual int processAudio(short int *si_input_samples, short int *si_output_samples, int i_num_sample_sets, int i_check_for_duplicate_buffers) = 0;
+};
+
+// Plays one extra FxSound device through its own DfxDsp to a real device, on its own thread, for as long as it exists.
+// Apps the user assigned to that FxSound device in Windows get the same effects as the main output, on a different device.
+class AudioRoute
+{
+public:
+	AudioRoute(const std::wstring& fx_device_id, const std::wstring& real_device_id, DfxDsp* settings_source);
+	~AudioRoute();
+
+private:
+	void run();
+	void stream(IMMDeviceEnumerator* enumerator);
+	void syncSettings();
+
+	const std::wstring fx_device_id_;
+	const std::wstring real_device_id_;
+	DfxDsp* settings_source_; // The main DfxDsp the GUI controls, copied into dsp_
+	DfxDsp dsp_;
+	std::atomic<bool> stop_{ false };
+	ULONGLONG last_sync_ = 0;
+	std::thread thread_;
 };
 
 class AudioPassthruPrivate
@@ -52,6 +77,7 @@ public:
     bool isPlaybackDeviceAvailable();
 	bool checkDeviceChanges();
 	void restoreDefaultPlaybackDevice();
+	void setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes);
 
 private:
 	int sndDeviceHandleToSoundDevices(bool active_devices = true);
@@ -71,5 +97,6 @@ private:
 	bool mute_;
 	DfxDsp *p_dfx_dsp_;
 	static AudioPassthruCallback *s_callback_;
+	std::vector<std::unique_ptr<AudioRoute>> routes_;
 };
 

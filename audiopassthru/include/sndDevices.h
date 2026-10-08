@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /* Limit settings */
 #define SND_DEVICES_MAX_NUM_DEVICES 64
+#define SND_DEVICES_MAX_ROUTE_DEVICES 8	/* Extra FxSound devices that AudioPassthru routes to other outputs */
 
 /* Device "friendly name" string, used to identify DFX device. */
 #define SND_DEVICES_DFX_DEVICE_STRING L"FxSound Audio Enhancer"
@@ -439,6 +440,11 @@ struct sndDevicesHdlType {
 	int MeasuredVirtualSilentBufferCount;	// This is buffer of measured all very low values, essentially silence.
 	int MeasuredTrueSilentBufferCount;		// This is buffer of measured all true zero values.
     BOOL playbackDeviceIsUnavailable;
+
+	// IDs of extra FxSound devices that AudioPassthru plays through to other real devices (see AudioRoute).
+	// They are never picked as the main DFX device. Set by AudioPassthru, survives init and re-init.
+	wchar_t routeDeviceIDs[SND_DEVICES_MAX_ROUTE_DEVICES][PT_MAX_GENERIC_STRLEN];
+	int numRouteDevices;
 
 	// Module common status flag, set by functions that can't complete their requestion operation
 	int function_status;

@@ -39,6 +39,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ptime.h"
 
 /*
+ * Returns the device index if it is a real playback device, otherwise SND_DEVICES_DEVICE_NOT_PRESENT.
+ * FxSound devices are never real devices (see sndDevices_GetAll), playing to one would loop or
+ * end up in an extra FxSound device that AudioPassthru routes elsewhere.
+ */
+static int sndDevicesRealDeviceIndex(struct sndDevicesHdlType *cast_handle, int deviceIndex)
+{
+	int i;
+
+	if (deviceIndex < 0)
+		return(SND_DEVICES_DEVICE_NOT_PRESENT);
+
+	for (i = 0; i < cast_handle->numRealDevices; i++)
+	{
+		if (cast_handle->pwszIDRealDevices[i] != NULL && wcscmp(cast_handle->pwszIDRealDevices[i], cast_handle->pwszID[deviceIndex]) == 0)
+			return(deviceIndex);
+	}
+
+	return(SND_DEVICES_DEVICE_NOT_PRESENT);
+}
+
+/*
  * FUNCTION: sndDevicesImplementDeviceRules()
  */
 int PT_DECLSPEC sndDevicesImplementDeviceRules(PT_HANDLE *hp_sndDevices, int *ip_resultFlag)
@@ -142,6 +163,13 @@ int PT_DECLSPEC sndDevicesImplementDeviceRules(PT_HANDLE *hp_sndDevices, int *ip
 	if( sndDevices_UtilsGetIndexFromID(hp_sndDevices, mostRecentPlaybackID, &mostRecentPlaybackNum) != OKAY )
 		return(NOT_OKAY);
 
+	// Only real devices from the history can become the playback device.
+	userSelectedPlaybackNum = sndDevicesRealDeviceIndex(cast_handle, userSelectedPlaybackNum);
+	mostRecentDefaultNum = sndDevicesRealDeviceIndex(cast_handle, mostRecentDefaultNum);
+	priorDefaultNum = sndDevicesRealDeviceIndex(cast_handle, priorDefaultNum);
+	originalDefaultNum = sndDevicesRealDeviceIndex(cast_handle, originalDefaultNum);
+	mostRecentPlaybackNum = sndDevicesRealDeviceIndex(cast_handle, mostRecentPlaybackNum);
+
 	// Test for first run since installation by checking for non-null most recent default device ID value.
 	if( wcscmp(mostRecentDefaultID, L"") == 0 )
 	{
@@ -151,7 +179,7 @@ int PT_DECLSPEC sndDevicesImplementDeviceRules(PT_HANDLE *hp_sndDevices, int *ip
 		//	return(NOT_OKAY);
 
 		// This is the first run after installation, store the current default device as both the original default and the most recent default.
-		if( current_defaultNum != dfxNum )
+		if( sndDevicesRealDeviceIndex(cast_handle, current_defaultNum) != SND_DEVICES_DEVICE_NOT_PRESENT )
 		{
 			if( sndDevicesWriteToRegistry(hp_sndDevices, REG_CURRENT_USER, SND_DEVICES_REGISTRY_ORIGINAL_DEFAULT_WIDE, cast_handle->pwszID[current_defaultNum]) != OKAY)
 				return(NOT_OKAY);
@@ -234,7 +262,7 @@ int PT_DECLSPEC sndDevicesImplementDeviceRules(PT_HANDLE *hp_sndDevices, int *ip
 	// If we got here we have more than one real playback device and either the user hasn't manually selected one or
 	// the selected device is not present. Use rules to select the playback device based on the default device setting and history.
 	// First check to see if the current default device is not one of the DFX devices.
-	if( current_defaultNum != dfxNum )
+	if( sndDevicesRealDeviceIndex(cast_handle, current_defaultNum) != SND_DEVICES_DEVICE_NOT_PRESENT )
 	{
 		// A non-DFX device is currently the default device.
 		// Check to see if the user has manually turned off automatice default device selection mode.
@@ -331,7 +359,7 @@ PlaybackDeviceIsSelected:  // Label to jump to when the playback device num has 
 				// We will use the most recent playback device recorded in the registry.
 				if (sndDevices_UtilsGetIndexFromID(hp_sndDevices, mostRecentPlaybackID, &deviceIndex) != OKAY)
 					return(NOT_OKAY);
-				cast_handle->playbackDeviceNum = deviceIndex;
+				cast_handle->playbackDeviceNum = sndDevicesRealDeviceIndex(cast_handle, deviceIndex);
 			}
 		}
 	}

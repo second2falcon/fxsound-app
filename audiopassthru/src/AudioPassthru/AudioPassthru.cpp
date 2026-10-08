@@ -48,6 +48,11 @@ void AudioPassthru::setDspProcessingModule(DfxDsp* p_dfx_dsp)
 	data_->setDspProcessingModule(p_dfx_dsp);
 }
 
+void AudioPassthru::setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes)
+{
+	data_->setRoutes(routes);
+}
+
 
 std::vector<SoundDevice> AudioPassthru::getSoundDevices(bool active_devices)
 {

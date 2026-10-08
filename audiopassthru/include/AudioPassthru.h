@@ -75,6 +75,9 @@ public:
     bool isPlaybackDeviceAvailable();
 	bool checkDeviceChanges();
 	void restoreDefaultPlaybackDevice();
+	// Extra FxSound devices, each played through its own copy of the effects to a real device, as {FxSound device ID, real device ID}.
+	// Apps are assigned to an extra FxSound device in Windows' per-app output settings.
+	void setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes);
 
 private:
 	AudioPassthruPrivate *data_;

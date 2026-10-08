@@ -44,12 +44,15 @@ AudioPassthruPrivate::AudioPassthruPrivate()
 	swprintf(wcp_playback_device_guid_, PT_MAX_GENERIC_STRLEN, L"");
 	b_no_valid_snd_device_dialog_shown_ = false;
 	debug_ = IS_TRUE;
+	p_dfx_dsp_ = nullptr;
 }
 
 AudioPassthruPrivate::~AudioPassthruPrivate()
 {
 	int i_result_flag;
 	int i_timed_out;
+
+	routes_.clear();
 
 	if (hp_sndDevices_ == NULL)
 		return;
@@ -643,6 +646,31 @@ void AudioPassthruPrivate::restoreDefaultPlaybackDevice()
 	/* Change the default soundcard to not be the DFX virtual one but instead the proper real one */
 	if (sndDevicesRestoreDefaultDevice(hp_sndDevices_, &i_resultFlag) != OKAY)
 		return;
+}
+
+/*
+* FUNCTION: setRoutes()
+* DESCRIPTION:
+*
+*  Replaces the routes of extra FxSound devices to real devices. Call after setDspProcessingModule()
+*  and, so the main FxSound device is picked right from the start, before init().
+*/
+void AudioPassthruPrivate::setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes)
+{
+	routes_.clear();
+
+	// Keeps the route devices from being picked as the main DFX device on the next device enumeration.
+	s_sndDevices_.numRouteDevices = 0;
+	for (const auto& route : routes)
+	{
+		if (s_sndDevices_.numRouteDevices == SND_DEVICES_MAX_ROUTE_DEVICES || p_dfx_dsp_ == nullptr)
+			break;
+
+		wcsncpy_s(s_sndDevices_.routeDeviceIDs[s_sndDevices_.numRouteDevices], PT_MAX_GENERIC_STRLEN, route.first.c_str(), _TRUNCATE);
+		s_sndDevices_.numRouteDevices++;
+
+		routes_.push_back(std::make_unique<AudioRoute>(route.first, route.second, p_dfx_dsp_));
+	}
 }
 
 int AudioPassthruPrivate::setTargetedRealPlaybackDevice(const std::wstring sound_device_guid)
