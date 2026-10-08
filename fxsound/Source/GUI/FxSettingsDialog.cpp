@@ -105,11 +105,18 @@ FxSettingsDialog::SettingsComponent::SettingsComponent()
 	help_button_->setImage(Drawable::createFromImageData(BinaryData::question_svg, BinaryData::question_svgSize).get());
 	help_button_->addListener(this);    
 
+	channels_button_ = std::make_unique<SettingsButton>("Channels");
+	channels_button_->setToggleState(false, NotificationType::dontSendNotification);
+	channels_button_->setImage(Drawable::createFromImageData(BinaryData::speaker_svg, BinaryData::speaker_svgSize).get());
+	channels_button_->addListener(this);
+
 	addAndMakeVisible(audio_button_.get());
+	addAndMakeVisible(channels_button_.get());
 	addAndMakeVisible(general_button_.get());
 	addAndMakeVisible(help_button_.get());
 
 	addAndMakeVisible(audio_settings_pane_);
+	addChildComponent(channels_settings_pane_);
 	addChildComponent(general_settings_pane_);
 	addChildComponent(help_settings_pane_);
 
@@ -119,46 +126,28 @@ FxSettingsDialog::SettingsComponent::SettingsComponent()
 void FxSettingsDialog::SettingsComponent::resized()
 {
 	audio_button_->setBounds(BUTTON_X, BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT);
-	general_button_->setBounds(BUTTON_X, audio_button_->getBottom() + 20, BUTTON_WIDTH, BUTTON_HEIGHT);
+	channels_button_->setBounds(BUTTON_X, audio_button_->getBottom() + 20, BUTTON_WIDTH, BUTTON_HEIGHT);
+	general_button_->setBounds(BUTTON_X, channels_button_->getBottom() + 20, BUTTON_WIDTH, BUTTON_HEIGHT);
 	help_button_->setBounds(BUTTON_X, general_button_->getBottom() + 20, BUTTON_WIDTH, BUTTON_HEIGHT);
 
 	juce::Rectangle<int> pane_rect(SEPARATOR_X + 1, 1, getWidth() - SEPARATOR_X + 1, getHeight() - 1);
 	audio_settings_pane_.setBounds(pane_rect);
+	channels_settings_pane_.setBounds(pane_rect);
 	general_settings_pane_.setBounds(pane_rect);
 	help_settings_pane_.setBounds(pane_rect);
 }
 
 void  FxSettingsDialog::SettingsComponent::buttonClicked(Button* button)
 {
-	if (button == audio_button_.get())
-	{
-		button->setToggleState(true, NotificationType::dontSendNotification);
-		general_button_->setToggleState(false, NotificationType::dontSendNotification);
-		help_button_->setToggleState(false, NotificationType::dontSendNotification);
+	std::pair<SettingsButton*, Component*> pages[] = { { audio_button_.get(), &audio_settings_pane_ },
+		{ channels_button_.get(), &channels_settings_pane_ },
+		{ general_button_.get(), &general_settings_pane_ },
+		{ help_button_.get(), &help_settings_pane_ } };
 
-		audio_settings_pane_.setVisible(true);
-		general_settings_pane_.setVisible(false);
-		help_settings_pane_.setVisible(false);
-	}
-	else if (button == general_button_.get())
+	for (auto& page : pages)
 	{
-		button->setToggleState(true, NotificationType::dontSendNotification);
-		audio_button_->setToggleState(false, NotificationType::dontSendNotification);
-		help_button_->setToggleState(false, NotificationType::dontSendNotification);
-
-		general_settings_pane_.setVisible(true);
-		audio_settings_pane_.setVisible(false);
-		help_settings_pane_.setVisible(false);
-	}
-	else if (button == help_button_.get())
-	{
-		button->setToggleState(true, NotificationType::dontSendNotification);
-		audio_button_->setToggleState(false, NotificationType::dontSendNotification);
-		general_button_->setToggleState(false, NotificationType::dontSendNotification);
-
-		help_settings_pane_.setVisible(true);
-		audio_settings_pane_.setVisible(false);
-		general_settings_pane_.setVisible(false);
+		page.first->setToggleState(page.first == button, NotificationType::dontSendNotification);
+		page.second->setVisible(page.first == button);
 	}
 }
 
@@ -185,8 +174,7 @@ void FxSettingsDialog::SettingsPane::paint(Graphics&)
 FxSettingsDialog::AudioSettingsPane::AudioSettingsPane() :
 	SettingsPane("Audio"),
 	prioritize_new_output_toggle_(TRANS("Prioritize new output devices")),
-	reset_presets_button_(TRANS("Reset presets to factory defaults")),
-	add_fx_device_button_(TRANS("Add FxSound device"))
+	reset_presets_button_(TRANS("Reset presets to factory defaults"))
 {
 	setFocusContainer(true);
 
@@ -227,87 +215,16 @@ FxSettingsDialog::AudioSettingsPane::AudioSettingsPane() :
 		reset_presets_button_.setEnabled(false);
 		};
 
-	routes_title_.setColour(Label::ColourIds::textColourId, getLookAndFeel().findColour(TextButton::textColourOnId));
-	routes_title_.setJustificationType(Justification::centredLeft);
-
-	add_fx_device_button_.setMouseCursor(MouseCursor::PointingHandCursor);
-	add_fx_device_button_.onClick = []() {
-		// The new device shows up in the list when Windows reports it, see modelChanged()
-		if (!FxController::getInstance().addFxSoundDevice())
-		{
-			AlertWindow::showMessageBoxAsync(AlertWindow::AlertIconType::WarningIcon, TRANS("Add FxSound device"), TRANS("The FxSound device could not be added."));
-		}
-	};
-
 	setText();
 
 	addAndMakeVisible(&output_preference_title_);
 	addAndMakeVisible(&output_preference_);
 	addAndMakeVisible(&prioritize_new_output_toggle_);
-	addAndMakeVisible(&routes_title_);
-	addAndMakeVisible(&add_fx_device_button_);
 	addAndMakeVisible(&reset_presets_button_);
-
-	updateRoutes();
-	FxModel::getModel().addListener(this);
 }
 
 FxSettingsDialog::AudioSettingsPane::~AudioSettingsPane()
 {
-	FxModel::getModel().removeListener(this);
-}
-
-void FxSettingsDialog::AudioSettingsPane::updateRoutes()
-{
-	auto& controller = FxController::getInstance();
-	auto outputs = controller.getActiveOutputDevices();
-
-	route_labels_.clear();
-	route_outputs_.clear();
-
-	for (auto& fx_device : controller.getExtraFxSoundDevices())
-	{
-		String fx_device_id = fx_device.pwszID.c_str();
-		auto route_output = controller.getRouteOutput(fx_device_id);
-
-		auto* label = route_labels_.add(new Label({}, fx_device.deviceFriendlyName.c_str()));
-		label->setColour(Label::ColourIds::textColourId, getLookAndFeel().findColour(TextButton::textColourOnId));
-		label->setTooltip(fx_device.deviceFriendlyName.c_str());
-
-		// Item id 1 is "Off", item id i + 2 is outputs[i]
-		auto* combo = route_outputs_.add(new FxComboBox());
-		combo->addItem(TRANS("Off"), 1);
-		combo->setSelectedId(1, NotificationType::dontSendNotification);
-		for (int i = 0; i < (int)outputs.size(); i++)
-		{
-			combo->addItem(outputs[i].deviceFriendlyName.c_str(), i + 2);
-			if (route_output == outputs[i].pwszID.c_str())
-				combo->setSelectedId(i + 2, NotificationType::dontSendNotification);
-		}
-		combo->onChange = [combo, fx_device_id, outputs]() {
-			auto index = combo->getSelectedId() - 2;
-			FxController::getInstance().setRouteOutput(fx_device_id, index >= 0 ? String(outputs[index].pwszID.c_str()) : String());
-		};
-
-		addAndMakeVisible(label);
-		addAndMakeVisible(combo);
-	}
-
-	resized();
-	repaint();
-}
-
-void FxSettingsDialog::AudioSettingsPane::modelChanged(FxModel::Event model_event)
-{
-	if (model_event == FxModel::Event::OutputListUpdated)
-	{
-		// Device changes can be reported on an audio thread
-		Component::SafePointer<AudioSettingsPane> pane(this);
-		MessageManager::callAsync([pane]() {
-			if (pane != nullptr)
-				pane->updateRoutes();
-		});
-	}
 }
 
 void FxSettingsDialog::AudioSettingsPane::resized()
@@ -330,19 +247,6 @@ void FxSettingsDialog::AudioSettingsPane::resized()
 	output_preference_bounds_ = juce::Rectangle<float>(group_x, group_y, group_width, group_height);
 
 	y = prioritize_new_output_toggle_.getBottom() + 30;
-	routes_title_.setBounds(X_MARGIN, y, width, LABEL_HEIGHT);
-	y = routes_title_.getBottom() + 10;
-	for (int i = 0; i < route_labels_.size(); i++)
-	{
-		route_labels_[i]->setBounds(X_MARGIN, y, ROUTE_LABEL_WIDTH, ROUTE_ROW_HEIGHT - 4);
-		route_outputs_[i]->setBounds(X_MARGIN + ROUTE_LABEL_WIDTH + 10, y, width - ROUTE_LABEL_WIDTH - 10, ROUTE_ROW_HEIGHT - 4);
-		y += ROUTE_ROW_HEIGHT;
-	}
-	add_fx_device_button_.setBounds(X_MARGIN, y + 2, add_fx_device_button_.getBestWidthForHeight(BUTTON_HEIGHT), BUTTON_HEIGHT);
-	routes_bounds_ = juce::Rectangle<float>(group_x, routes_title_.getY() - GROUP_MARGIN, group_width,
-		add_fx_device_button_.getBottom() - routes_title_.getY() + GROUP_MARGIN * 2);
-
-	y = add_fx_device_button_.getBottom() + 30;
 	resizeResetButton(X_MARGIN, y);
 }
 
@@ -352,7 +256,6 @@ void FxSettingsDialog::AudioSettingsPane::paint(Graphics& g)
 
 	g.setFillType(FillType(Colour(FXCOLOR(DefaultFill)).withAlpha(0.2f)));
 	g.fillRoundedRectangle(output_preference_bounds_, 8);
-	g.fillRoundedRectangle(routes_bounds_, 8);
 
 	setText();
 
@@ -367,11 +270,6 @@ void FxSettingsDialog::AudioSettingsPane::setText()
 	output_preference_title_.setText(TRANS("Output Device Preference"), NotificationType::dontSendNotification);
 
 	prioritize_new_output_toggle_.setButtonText(TRANS("Prioritize new output devices"));
-
-	routes_title_.setFont(theme.getNormalFont());
-	routes_title_.setText(TRANS("Extra FxSound devices"), NotificationType::dontSendNotification);
-	routes_title_.setTooltip(TRANS("Apps you send to an extra FxSound device in Windows sound settings (App volume and device preferences) play through FxSound to the output selected for it."));
-	add_fx_device_button_.setButtonText(TRANS("Add FxSound device"));
 
 	reset_presets_button_.setButtonText(TRANS("Reset presets to factory defaults"));
 	resizeResetButton(reset_presets_button_.getX(), reset_presets_button_.getY());
@@ -410,7 +308,6 @@ void FxSettingsDialog::AudioSettingsPane::visibilityChanged()
 	if (isVisible())
 	{
 		output_preference_.update();
-		updateRoutes();
     }
 }
 
@@ -646,4 +543,167 @@ void FxSettingsDialog::HelpSettingsPane::setText()
     helpcenter_link_.setButtonText(TRANS("Help center"));        
     feedback_link_.setButtonText(TRANS("Feedback"));
 	auto_updates_toggle_.setButtonText(TRANS("Automatic updates"));;
+}
+
+FxSettingsDialog::ChannelsSettingsPane::ChannelsSettingsPane() :
+	SettingsPane("Channels"),
+	add_button_(TRANS("Add FxSound device"))
+{
+	setFocusContainer(true);
+
+	info_.setColour(Label::ColourIds::textColourId, getLookAndFeel().findColour(TextButton::textColourOnId));
+	info_.setJustificationType(Justification::topLeft);
+
+	viewport_.setViewedComponent(&channels_, false);
+	viewport_.setScrollBarsShown(true, false);
+
+	add_button_.setMouseCursor(MouseCursor::PointingHandCursor);
+	add_button_.onClick = []() {
+		// The new device shows up in the list when Windows reports it, see modelChanged()
+		if (!FxController::getInstance().addFxSoundDevice())
+		{
+			AlertWindow::showMessageBoxAsync(AlertWindow::AlertIconType::WarningIcon, TRANS("Add FxSound device"), TRANS("The FxSound device could not be added."));
+		}
+	};
+
+	setText();
+
+	addAndMakeVisible(&info_);
+	addAndMakeVisible(&viewport_);
+	addAndMakeVisible(&add_button_);
+
+	FxModel::getModel().addListener(this);
+}
+
+FxSettingsDialog::ChannelsSettingsPane::~ChannelsSettingsPane()
+{
+	FxModel::getModel().removeListener(this);
+}
+
+void FxSettingsDialog::ChannelsSettingsPane::update()
+{
+	auto& controller = FxController::getInstance();
+	auto& model = FxModel::getModel();
+	auto outputs = controller.getActiveOutputDevices();
+
+	names_.clear();
+	outputs_.clear();
+	presets_.clear();
+
+	for (auto& fx_device : controller.getExtraFxSoundDevices())
+	{
+		String fx_device_id = fx_device.pwszID.c_str();
+		auto route_output = controller.getRouteOutput(fx_device_id);
+		auto route_preset = controller.getRoutePreset(fx_device_id);
+
+		auto* name = names_.add(new Label({}, fx_device.deviceFriendlyName.c_str()));
+		name->setColour(Label::ColourIds::textColourId, getLookAndFeel().findColour(TextButton::textColourOnId));
+		name->setTooltip(fx_device.deviceFriendlyName.c_str());
+
+		// Item id 1 is "Off", item id i + 2 is outputs[i]
+		auto* output = outputs_.add(new FxComboBox());
+		output->addItem(TRANS("Off"), 1);
+		output->setSelectedId(1, NotificationType::dontSendNotification);
+		for (int i = 0; i < (int)outputs.size(); i++)
+		{
+			output->addItem(outputs[i].deviceFriendlyName.c_str(), i + 2);
+			if (route_output == outputs[i].pwszID.c_str())
+				output->setSelectedId(i + 2, NotificationType::dontSendNotification);
+		}
+		// Keeps the route to an output that isn't connected right now
+		if (route_output.isNotEmpty() && output->getSelectedId() == 1)
+		{
+			output->addItem(TRANS("Output not connected"), DISCONNECTED_OUTPUT_ID);
+			output->setSelectedId(DISCONNECTED_OUTPUT_ID, NotificationType::dontSendNotification);
+		}
+
+		// Item id 1 is the main window's preset, item id i + 2 is preset i
+		auto* preset = presets_.add(new FxComboBox());
+		preset->addItem(TRANS("Same as main window"), 1);
+		preset->setSelectedId(1, NotificationType::dontSendNotification);
+		for (int i = 0; i < model.getPresetCount(); i++)
+		{
+			auto preset_name = model.getPreset(i).name;
+			preset->addItem(preset_name, i + 2);
+			if (preset_name == route_preset)
+				preset->setSelectedId(i + 2, NotificationType::dontSendNotification);
+		}
+		preset->setEnabled(output->getSelectedId() != 1);
+
+		auto apply = [output, preset, fx_device_id, route_output, outputs]() {
+			auto output_id = output->getSelectedId();
+			String output_device_id = output_id == DISCONNECTED_OUTPUT_ID ? route_output :
+				output_id >= 2 ? String(outputs[output_id - 2].pwszID.c_str()) : String();
+			preset->setEnabled(output_device_id.isNotEmpty());
+			FxController::getInstance().setRoute(fx_device_id, output_device_id, preset->getSelectedId() > 1 ? preset->getText() : String());
+		};
+		output->onChange = apply;
+		preset->onChange = apply;
+
+		channels_.addAndMakeVisible(name);
+		channels_.addAndMakeVisible(output);
+		channels_.addAndMakeVisible(preset);
+	}
+
+	resized();
+}
+
+void FxSettingsDialog::ChannelsSettingsPane::resized()
+{
+	auto bounds = getLocalBounds().withLeft(X_MARGIN).withTop(Y_MARGIN).withHeight(TITLE_HEIGHT);
+	title_.setBounds(bounds);
+
+	auto width = getWidth() - ((X_MARGIN + 5) * 2);
+	info_.setBounds(X_MARGIN, INFO_Y, width, INFO_HEIGHT);
+	add_button_.setBounds(X_MARGIN, getHeight() - BUTTON_HEIGHT - 20, add_button_.getBestWidthForHeight(BUTTON_HEIGHT), BUTTON_HEIGHT);
+	viewport_.setBounds(X_MARGIN, info_.getBottom() + 10, width, add_button_.getY() - info_.getBottom() - 20);
+
+	auto channel_width = viewport_.getMaximumVisibleWidth();
+	channels_.setSize(channel_width, names_.size() * CHANNEL_HEIGHT);
+	for (int i = 0; i < names_.size(); i++)
+	{
+		auto y = i * CHANNEL_HEIGHT;
+		names_[i]->setBounds(0, y, channel_width, NAME_HEIGHT);
+		outputs_[i]->setBounds(0, y + NAME_HEIGHT + 2, channel_width / 2 - 5, COMBO_HEIGHT);
+		presets_[i]->setBounds(channel_width / 2 + 5, y + NAME_HEIGHT + 2, channel_width / 2 - 5, COMBO_HEIGHT);
+	}
+}
+
+void FxSettingsDialog::ChannelsSettingsPane::paint(Graphics& g)
+{
+	g.fillAll(getLookAndFeel().findColour(ResizableWindow::backgroundColourId));
+
+	setText();
+
+	SettingsPane::paint(g);
+}
+
+void FxSettingsDialog::ChannelsSettingsPane::setText()
+{
+	auto& theme = dynamic_cast<FxTheme&>(LookAndFeel::getDefaultLookAndFeel());
+
+	info_.setFont(theme.getNormalFont());
+	info_.setText(TRANS("In Windows sound settings (App volume and device preferences), send apps to an extra FxSound device. "
+		"Each one plays to its own output with its own preset. A channel follows your edits live while the main window has its preset selected."),
+		NotificationType::dontSendNotification);
+	add_button_.setButtonText(TRANS("Add FxSound device"));
+}
+
+void FxSettingsDialog::ChannelsSettingsPane::modelChanged(FxModel::Event model_event)
+{
+	if (model_event == FxModel::Event::OutputListUpdated || model_event == FxModel::Event::PresetListUpdated)
+	{
+		// Device changes can be reported on an audio thread
+		Component::SafePointer<ChannelsSettingsPane> pane(this);
+		MessageManager::callAsync([pane]() {
+			if (pane != nullptr)
+				pane->update();
+		});
+	}
+}
+
+void FxSettingsDialog::ChannelsSettingsPane::visibilityChanged()
+{
+	if (isVisible())
+		update();
 }

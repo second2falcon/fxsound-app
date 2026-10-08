@@ -655,7 +655,7 @@ void AudioPassthruPrivate::restoreDefaultPlaybackDevice()
 *  Replaces the routes of extra FxSound devices to real devices. Call after setDspProcessingModule()
 *  and, so the main FxSound device is picked right from the start, before init().
 */
-void AudioPassthruPrivate::setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes)
+void AudioPassthruPrivate::setRoutes(const std::vector<AudioRouteSettings>& routes)
 {
 	routes_.clear();
 
@@ -666,10 +666,19 @@ void AudioPassthruPrivate::setRoutes(const std::vector<std::pair<std::wstring, s
 		if (s_sndDevices_.numRouteDevices == SND_DEVICES_MAX_ROUTE_DEVICES || p_dfx_dsp_ == nullptr)
 			break;
 
-		wcsncpy_s(s_sndDevices_.routeDeviceIDs[s_sndDevices_.numRouteDevices], PT_MAX_GENERIC_STRLEN, route.first.c_str(), _TRUNCATE);
+		wcsncpy_s(s_sndDevices_.routeDeviceIDs[s_sndDevices_.numRouteDevices], PT_MAX_GENERIC_STRLEN, route.fx_device_id.c_str(), _TRUNCATE);
 		s_sndDevices_.numRouteDevices++;
 
-		routes_.push_back(std::make_unique<AudioRoute>(route.first, route.second, p_dfx_dsp_));
+		routes_.push_back(std::make_unique<AudioRoute>(route, p_dfx_dsp_));
+	}
+}
+
+void AudioPassthruPrivate::setRoutePresetDsp(const std::wstring& fx_device_id, DfxDsp* preset_dsp)
+{
+	for (auto& route : routes_)
+	{
+		if (route->fx_device_id_ == fx_device_id)
+			route->preset_dsp_ = preset_dsp;
 	}
 }
 

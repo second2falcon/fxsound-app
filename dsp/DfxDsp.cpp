@@ -21,9 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "DfxDsp.h"
 #include "u_DfxDsp.h"
 
-DfxDsp::DfxDsp()
+DfxDsp::DfxDsp(const std::wstring& registry_name)
 {
-	data_ = new DfxDspPrivate();
+	data_ = new DfxDspPrivate(registry_name);
 }
 
 

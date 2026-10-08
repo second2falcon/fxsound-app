@@ -78,7 +78,7 @@ public:
 class DfxDspPrivate
 {
 public:
-	DfxDspPrivate();
+	DfxDspPrivate(const std::wstring& registry_name);
 	~DfxDspPrivate();
 	int processAudio(short int *si_input_samples, short int *si_output_samples, int i_num_sample_sets, int i_check_for_duplicate_buffers);
 	int setSignalFormat(int i_bps, int i_nch, int i_srate, int i_valid_bits);

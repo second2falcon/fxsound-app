@@ -48,9 +48,14 @@ void AudioPassthru::setDspProcessingModule(DfxDsp* p_dfx_dsp)
 	data_->setDspProcessingModule(p_dfx_dsp);
 }
 
-void AudioPassthru::setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes)
+void AudioPassthru::setRoutes(const std::vector<AudioRouteSettings>& routes)
 {
 	data_->setRoutes(routes);
+}
+
+void AudioPassthru::setRoutePresetDsp(const std::wstring& fx_device_id, DfxDsp* preset_dsp)
+{
+	data_->setRoutePresetDsp(fx_device_id, preset_dsp);
 }
 
 

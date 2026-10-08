@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "AudioPassthru.h"
 #include "DfxDsp.h"
 #include <wtsapi32.h>
+#include <map>
 
 using namespace FxSound;
 
@@ -142,11 +143,12 @@ public:
     bool isNewOutputPrioritized();
     void setNewOutputPrioritized(bool prioritize_new_devices);
 
-	// Extra FxSound devices, each played through the same effects to another output.
+	// Extra FxSound devices, each played to another output with a preset of its own (empty: the main window's).
 	std::vector<SoundDevice> getExtraFxSoundDevices();
 	const std::vector<SoundDevice>& getActiveOutputDevices() { return active_output_devices_; }
 	String getRouteOutput(const String& fx_device_id);
-	void setRouteOutput(const String& fx_device_id, const String& output_device_id);
+	String getRoutePreset(const String& fx_device_id);
+	void setRoute(const String& fx_device_id, const String& output_device_id, const String& preset_name);
 	bool addFxSoundDevice();
 
 	FxThemeMode getThemeMode();
@@ -246,6 +248,8 @@ private:
 
 	void powerOn(bool on);
 	void applyRoutes();
+	void updateRoutePresets();
+	bool loadPresetInto(DfxDsp& dsp, const String& preset_name);
 
 	String getAutoSavePath() const;
     String getAutoSavePresetPath(const String& preset_name) const;
@@ -269,6 +273,8 @@ private:
 	FxSystemTrayView* system_tray_view_;
 	AudioPassthru* audio_passthru_;
 	DfxDsp dfx_dsp_;
+	// Per extra FxSound device, the DfxDsp its preset is loaded into. Routes point at them, so they are never erased.
+	std::map<String, std::unique_ptr<DfxDsp>> route_preset_dsps_;
 	FxSound::Settings settings_;
 	uint32_t device_count_;
 	std::unique_ptr<FileLogger> file_logger_;

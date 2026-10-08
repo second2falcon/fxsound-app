@@ -720,6 +720,7 @@ void FxController::init(FxMainWindow* main_window, FxSystemTrayView* system_tray
 		if (prev_version != app_version)
 		{
 			RegDeleteTree(HKEY_CURRENT_USER, L"Software\\DFX");
+			applyRoutes(); // Their DfxDsps keep their settings under the key just deleted, start them afresh
 
 			FxModel::getModel().pushMessage(" ", { TRANS("Click here to see what's new on this version!"), "https://www.fxsound.com/changelog" });
 
@@ -1098,6 +1099,8 @@ bool FxController::setPreset(int selected_index, bool notify)
 			dfx_dsp_.setEqBandFrequency(b, dfx_dsp_.getEqBandFrequency(b));
 			dfx_dsp_.setEqBandBoostCut(b, dfx_dsp_.getEqBandBoostCut(b));
 		}
+
+		updateRoutePresets();
 	}
 
 	if (notify && FxModel::getModel().getPowerState())
@@ -1271,6 +1274,18 @@ void FxController::renamePreset(const String& new_name)
 		SHFileOperation(&file_op);
 
 		initPresets();
+
+		// Channels that use the preset keep using it
+		auto routes = settings_.getJson("output_routes");
+		if (auto* routes_obj = routes.getDynamicObject())
+		{
+			for (auto& route : routes_obj->getProperties())
+			{
+				if (route.value["preset"].toString() == preset.name)
+					route.value.getDynamicObject()->setProperty("preset", new_name);
+			}
+			settings_.setJson("output_routes", routes);
+		}
 
 		setPreset(new_name);
 
@@ -1783,6 +1798,7 @@ void FxController::setNumEqBands(int num_bands)
 {
 	dfx_dsp_.setNumBands(num_bands);
 	settings_.setInt("num_bands", num_bands);
+	updateRoutePresets(); // Reloads their presets for the new number of bands
 }
 
 float FxController::getVolumeLeveling()
@@ -2768,36 +2784,127 @@ std::vector<SoundDevice> FxController::getExtraFxSoundDevices()
 	return fx_devices;
 }
 
-// Routes are stored as {"<FxSound device ID>": "<output device ID>", ...}
+// Routes are stored as {"<FxSound device ID>": {"output": "<output device ID>", "preset": "<preset name>"}, ...}
+// An empty preset name means the route uses whatever the main window uses.
 void FxController::applyRoutes()
 {
-	std::vector<std::pair<std::wstring, std::wstring>> routes;
+	std::vector<AudioRouteSettings> routes;
 	if (auto* routes_obj = settings_.getJson("output_routes").getDynamicObject())
 	{
 		for (auto& route : routes_obj->getProperties())
-			routes.emplace_back(route.name.toString().toWideCharPointer(), route.value.toString().toWideCharPointer());
+		{
+			String fx_device_id = route.name.toString();
+
+			// Own registry name, so its settings stay its own (endpoint IDs have no backslashes)
+			auto& preset_dsp = route_preset_dsps_[fx_device_id];
+			if (preset_dsp == nullptr)
+				preset_dsp = std::make_unique<DfxDsp>((L"DFX\\Presets\\" + fx_device_id).toWideCharPointer());
+
+			routes.push_back({ fx_device_id.toWideCharPointer(), route.value["output"].toString().toWideCharPointer(), nullptr });
+		}
 	}
 	audio_passthru_->setRoutes(routes);
+	updateRoutePresets();
+}
+
+// Points each route at the DfxDsp holding its preset. While the main window has the same preset selected that's the
+// main DfxDsp, so edits are heard on the route right away. Otherwise it's the route's own one, loaded from the preset
+// file (setPreset() auto-saves a modified preset before switching away from it, so those edits are kept).
+void FxController::updateRoutePresets()
+{
+	auto& model = FxModel::getModel();
+	auto selected = model.getSelectedPreset();
+	auto main_preset = selected >= 0 && selected < model.getPresetCount() ? model.getPreset(selected).name : String();
+
+	if (auto* routes_obj = settings_.getJson("output_routes").getDynamicObject())
+	{
+		for (auto& route : routes_obj->getProperties())
+		{
+			String fx_device_id = route.name.toString();
+			String preset_name = route.value["preset"].toString();
+			auto preset_dsp = route_preset_dsps_.find(fx_device_id);
+
+			DfxDsp* dsp = nullptr; // The main one, also when the preset no longer exists
+			if (preset_name.isNotEmpty() && preset_name != main_preset && preset_dsp != route_preset_dsps_.end() &&
+				loadPresetInto(*preset_dsp->second, preset_name))
+				dsp = preset_dsp->second.get();
+
+			audio_passthru_->setRoutePresetDsp(fx_device_id.toWideCharPointer(), dsp);
+		}
+	}
+}
+
+// Loads a preset the same way setPreset() does for the main DfxDsp.
+bool FxController::loadPresetInto(DfxDsp& dsp, const String& preset_name)
+{
+	auto& model = FxModel::getModel();
+	for (auto i = 0; i < model.getPresetCount(); i++)
+	{
+		auto preset = model.getPreset(i);
+		if (preset.name != preset_name || preset.path.isEmpty())
+			continue;
+
+		auto path = getAutoSavePresetPath(preset.name);
+		if (!File(path).existsAsFile())
+			path = preset.path;
+
+		dsp.setNumBands(dfx_dsp_.getNumEqBands());
+		if (dsp.loadPreset(path.toWideCharPointer()) != 0)
+			return false;
+
+		for (auto e = 0; e < FxEffects::EffectType::NumEffects; e++)
+		{
+			auto effect = static_cast<DfxDsp::Effect>(e);
+			dsp.setEffectValue(effect, dsp.getEffectValue(effect) * 10);
+		}
+		for (auto b = 0; b < dsp.getNumEqBands(); b++)
+		{
+			dsp.setEqBandFrequency(b, dsp.getEqBandFrequency(b));
+			dsp.setEqBandBoostCut(b, dsp.getEqBandBoostCut(b));
+		}
+		return true;
+	}
+	return false;
 }
 
 String FxController::getRouteOutput(const String& fx_device_id)
 {
-	return settings_.getJson("output_routes")[Identifier(fx_device_id)].toString();
+	return settings_.getJson("output_routes")[Identifier(fx_device_id)]["output"].toString();
 }
 
-void FxController::setRouteOutput(const String& fx_device_id, const String& output_device_id)
+String FxController::getRoutePreset(const String& fx_device_id)
 {
+	return settings_.getJson("output_routes")[Identifier(fx_device_id)]["preset"].toString();
+}
+
+// An empty output removes the route.
+void FxController::setRoute(const String& fx_device_id, const String& output_device_id, const String& preset_name)
+{
+	auto output_changed = output_device_id != getRouteOutput(fx_device_id);
+
 	auto routes = settings_.getJson("output_routes");
 	if (!routes.isObject())
 		routes = var(new DynamicObject());
 
 	if (output_device_id.isEmpty())
+	{
 		routes.getDynamicObject()->removeProperty(fx_device_id);
+	}
 	else
-		routes.getDynamicObject()->setProperty(fx_device_id, output_device_id);
+	{
+		auto* route = new DynamicObject();
+		route->setProperty("output", output_device_id);
+		route->setProperty("preset", preset_name);
+		routes.getDynamicObject()->setProperty(fx_device_id, var(route));
+	}
 
 	settings_.setJson("output_routes", routes);
-	applyRoutes();
+
+	// Only a new output needs the routes restarted, a new preset is picked up while playing
+	if (output_changed)
+		applyRoutes();
+	else
+		updateRoutePresets();
 }
 
 // Installs one more instance of the FxSound driver, the same way the installer installs the first one.

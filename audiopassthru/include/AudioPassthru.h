@@ -52,6 +52,16 @@ struct SoundDevice {
 	int deviceNumChannel; // Number of channels for all devices.
 };
 
+// An extra FxSound device that is played through its own effects to a real device.
+// Apps are assigned to an extra FxSound device in Windows' per-app output settings.
+struct AudioRouteSettings {
+	std::wstring fx_device_id;
+	std::wstring real_device_id;
+	// Effects and EQ come from this DfxDsp, the main one when null. Power and the app wide settings
+	// (master gain, balance, ...) always come from the main one. Must outlive the route.
+	DfxDsp* preset_dsp = nullptr;
+};
+
 class AudioPassthruCallback
 {
 public:
@@ -75,9 +85,9 @@ public:
     bool isPlaybackDeviceAvailable();
 	bool checkDeviceChanges();
 	void restoreDefaultPlaybackDevice();
-	// Extra FxSound devices, each played through its own copy of the effects to a real device, as {FxSound device ID, real device ID}.
-	// Apps are assigned to an extra FxSound device in Windows' per-app output settings.
-	void setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes);
+	void setRoutes(const std::vector<AudioRouteSettings>& routes);
+	// Changes where a route's effects and EQ come from without interrupting its audio.
+	void setRoutePresetDsp(const std::wstring& fx_device_id, DfxDsp* preset_dsp);
 
 private:
 	AudioPassthruPrivate *data_;

@@ -43,8 +43,10 @@ namespace
 	}
 }
 
-AudioRoute::AudioRoute(const std::wstring& fx_device_id, const std::wstring& real_device_id, DfxDsp* settings_source) :
-	fx_device_id_(fx_device_id), real_device_id_(real_device_id), settings_source_(settings_source),
+AudioRoute::AudioRoute(const AudioRouteSettings& settings, DfxDsp* main_dsp) :
+	fx_device_id_(settings.fx_device_id), preset_dsp_(settings.preset_dsp), real_device_id_(settings.real_device_id), main_dsp_(main_dsp),
+	// Own registry name, so the settings of this DfxDsp stay its own (endpoint IDs have no backslashes)
+	dsp_(L"DFX\\Routes\\" + settings.fx_device_id),
 	thread_(&AudioRoute::run, this)
 {
 }
@@ -199,45 +201,51 @@ void AudioRoute::stream(IMMDeviceEnumerator* enumerator)
 	render_client->Stop();
 }
 
-// Copies the settings of the main DfxDsp, which the GUI controls, into this route's own DfxDsp.
-// Runs on the route thread so dsp_ is only ever touched by one thread.
+// Copies power and the app wide settings of the main DfxDsp, and the effects and EQ of the preset DfxDsp, into this
+// route's own DfxDsp. Runs on the route thread so dsp_ is only ever touched by one thread.
 void AudioRoute::syncSettings()
 {
-	DfxDsp& source = *settings_source_;
+	DfxDsp& main = *main_dsp_;
+	DfxDsp* preset_dsp = preset_dsp_;
+	DfxDsp& preset = preset_dsp != nullptr ? *preset_dsp : main;
 
 	// isPowerOn() returns the bypass state, compare as is and invert when setting.
-	if (source.isPowerOn() != dsp_.isPowerOn())
-		dsp_.powerOn(!source.isPowerOn());
+	if (main.isPowerOn() != dsp_.isPowerOn())
+		dsp_.powerOn(!main.isPowerOn());
+
+	int num_bands = main.getNumEqBands();
+	if (num_bands != dsp_.getNumEqBands())
+		dsp_.setNumBands(num_bands);
+
+	if (differ(main.getBalance(), dsp_.getBalance()))
+		dsp_.setBalance(main.getBalance());
+	if (differ(main.getNormalization(), dsp_.getNormalization()))
+		dsp_.setNormalization(main.getNormalization());
+	if (differ(main.getVolumeLeveling(), dsp_.getVolumeLeveling()))
+		dsp_.setVolumeLeveling(main.getVolumeLeveling());
+	if (differ(main.getMasterGain(), dsp_.getMasterGain()))
+		dsp_.setMasterGain(main.getMasterGain());
+	if (differ(main.getFilterQ(), dsp_.getFilterQ()))
+		dsp_.setFilterQ(main.getFilterQ());
 
 	for (int i = 0; i < DfxDsp::NumEffects; i++)
 	{
 		auto effect = static_cast<DfxDsp::Effect>(i);
 		// getEffectValue() returns a tenth of the value setEffectValue() takes.
-		if (differ(source.getEffectValue(effect), dsp_.getEffectValue(effect)))
-			dsp_.setEffectValue(effect, source.getEffectValue(effect) * 10);
+		if (differ(preset.getEffectValue(effect), dsp_.getEffectValue(effect)))
+			dsp_.setEffectValue(effect, preset.getEffectValue(effect) * 10);
 	}
 
-	int num_bands = source.getNumEqBands();
-	if (num_bands != dsp_.getNumEqBands())
-		dsp_.setNumBands(num_bands);
+	// The preset DfxDsp can briefly have another number of bands, while the GUI changes it.
+	if (preset.getNumEqBands() != num_bands)
+		return;
 	for (int band = 0; band < num_bands; band++)
 	{
 		// A band read while the GUI changes the number of bands comes back as 0Hz, skip it until the next sync.
-		auto freq = source.getEqBandFrequency(band);
+		auto freq = preset.getEqBandFrequency(band);
 		if (freq > 0 && differ(freq, dsp_.getEqBandFrequency(band)))
 			dsp_.setEqBandFrequency(band, freq);
-		if (differ(source.getEqBandBoostCut(band), dsp_.getEqBandBoostCut(band)))
-			dsp_.setEqBandBoostCut(band, source.getEqBandBoostCut(band));
+		if (differ(preset.getEqBandBoostCut(band), dsp_.getEqBandBoostCut(band)))
+			dsp_.setEqBandBoostCut(band, preset.getEqBandBoostCut(band));
 	}
-
-	if (differ(source.getBalance(), dsp_.getBalance()))
-		dsp_.setBalance(source.getBalance());
-	if (differ(source.getNormalization(), dsp_.getNormalization()))
-		dsp_.setNormalization(source.getNormalization());
-	if (differ(source.getVolumeLeveling(), dsp_.getVolumeLeveling()))
-		dsp_.setVolumeLeveling(source.getVolumeLeveling());
-	if (differ(source.getMasterGain(), dsp_.getMasterGain()))
-		dsp_.setMasterGain(source.getMasterGain());
-	if (differ(source.getFilterQ(), dsp_.getFilterQ()))
-		dsp_.setFilterQ(source.getFilterQ());
 }

@@ -37,7 +37,9 @@ class DfxDsp
 public:
 	enum Effect { Fidelity = 0, Ambience = 1, Surround = 2, DynamicBoost = 3, Bass = 4, NumEffects = 5 };
 
-	DfxDsp();
+	// The engine keeps its settings under HKCU\SOFTWARE\<registry_name>, so every instance that must have
+	// settings of its own needs its own name. The default one is the main instance's.
+	explicit DfxDsp(const std::wstring& registry_name = L"DFX");
 	~DfxDsp();
 
 	int setSignalFormat(int i_bps, int i_nch, int i_srate, int i_valid_bits);

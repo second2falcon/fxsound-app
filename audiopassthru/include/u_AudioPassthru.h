@@ -37,21 +37,23 @@ public:
 };
 
 // Plays one extra FxSound device through its own DfxDsp to a real device, on its own thread, for as long as it exists.
-// Apps the user assigned to that FxSound device in Windows get the same effects as the main output, on a different device.
+// Apps the user assigned to that FxSound device in Windows get effects of their own, on a different device.
 class AudioRoute
 {
 public:
-	AudioRoute(const std::wstring& fx_device_id, const std::wstring& real_device_id, DfxDsp* settings_source);
+	AudioRoute(const AudioRouteSettings& settings, DfxDsp* main_dsp);
 	~AudioRoute();
+
+	const std::wstring fx_device_id_;
+	std::atomic<DfxDsp*> preset_dsp_; // Effects and EQ are copied from here into dsp_, from main_dsp_ when null
 
 private:
 	void run();
 	void stream(IMMDeviceEnumerator* enumerator);
 	void syncSettings();
 
-	const std::wstring fx_device_id_;
 	const std::wstring real_device_id_;
-	DfxDsp* settings_source_; // The main DfxDsp the GUI controls, copied into dsp_
+	DfxDsp* main_dsp_; // The main DfxDsp the GUI controls, power and app wide settings are copied from it
 	DfxDsp dsp_;
 	std::atomic<bool> stop_{ false };
 	ULONGLONG last_sync_ = 0;
@@ -77,7 +79,8 @@ public:
     bool isPlaybackDeviceAvailable();
 	bool checkDeviceChanges();
 	void restoreDefaultPlaybackDevice();
-	void setRoutes(const std::vector<std::pair<std::wstring, std::wstring>>& routes);
+	void setRoutes(const std::vector<AudioRouteSettings>& routes);
+	void setRoutePresetDsp(const std::wstring& fx_device_id, DfxDsp* preset_dsp);
 
 private:
 	int sndDeviceHandleToSoundDevices(bool active_devices = true);

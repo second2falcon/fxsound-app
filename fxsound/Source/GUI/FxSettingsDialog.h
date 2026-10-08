@@ -89,7 +89,7 @@ private:
 		String name_;
 	};
 
-	class AudioSettingsPane : public SettingsPane, public FxModel::Listener
+	class AudioSettingsPane : public SettingsPane
 	{
 	public:
 		AudioSettingsPane();
@@ -108,14 +108,10 @@ private:
 		static constexpr int RESET_PRESETS_BUTTON_WIDTH = 220;
 		static constexpr int BUTTON_HEIGHT = 24;
 		static constexpr int MAX_BUTTON_WIDTH = 315;
-		static constexpr int ROUTE_ROW_HEIGHT = 28;
-		static constexpr int ROUTE_LABEL_WIDTH = 170;
 
 		void setText();
 		void resizeResetButton(int x, int y);
-		void updateRoutes();
 
-		void modelChanged(FxModel::Event model_event) override;
 		void visibilityChanged() override;
 		void mouseEnter(const MouseEvent& mouse_event) override;
 		void mouseExit(const MouseEvent& mouse_event) override;
@@ -127,13 +123,6 @@ private:
 		TextButton reset_presets_button_;
 
 		juce::Rectangle<float> output_preference_bounds_;
-
-		// Extra FxSound devices and the output each one plays to
-		Label routes_title_;
-		OwnedArray<Label> route_labels_;
-		OwnedArray<FxComboBox> route_outputs_;
-		TextButton add_fx_device_button_;
-		juce::Rectangle<float> routes_bounds_;
 	};
 
 	class GeneralSettingsPane : public SettingsPane
@@ -196,11 +185,45 @@ private:
 		ToggleButton debug_log_toggle_;
 	};
 
+	// Extra FxSound devices (channels), each with the output and the preset it plays with
+	class ChannelsSettingsPane : public SettingsPane, public FxModel::Listener
+	{
+	public:
+		ChannelsSettingsPane();
+		~ChannelsSettingsPane();
+
+		void resized() override;
+		void paint(Graphics& g) override;
+
+	private:
+		static constexpr int INFO_Y = 50;
+		static constexpr int INFO_HEIGHT = 64;
+		static constexpr int NAME_HEIGHT = 20;
+		static constexpr int COMBO_HEIGHT = 26;
+		static constexpr int CHANNEL_HEIGHT = 60;
+		static constexpr int BUTTON_HEIGHT = 24;
+		static constexpr int DISCONNECTED_OUTPUT_ID = 1000;
+
+		void setText();
+		void update();
+
+		void modelChanged(FxModel::Event model_event) override;
+		void visibilityChanged() override;
+
+		Label info_;
+		Component channels_; // Before viewport_, which shows it, so it outlives viewport_
+		Viewport viewport_;
+		OwnedArray<Label> names_;
+		OwnedArray<FxComboBox> outputs_;
+		OwnedArray<FxComboBox> presets_;
+		TextButton add_button_;
+	};
+
 	class SettingsComponent : public Component, public Button::Listener
 	{
 	public:
         static constexpr int WIDTH = 600;
-        static constexpr int HEIGHT = 640;
+        static constexpr int HEIGHT = 510;
 
 		SettingsComponent();
         ~SettingsComponent() = default;
@@ -219,10 +242,12 @@ private:
 		std::unique_ptr<SettingsButton> audio_button_;
 		std::unique_ptr<SettingsButton> general_button_;
 		std::unique_ptr<SettingsButton> help_button_;
+		std::unique_ptr<SettingsButton> channels_button_;
 
 		AudioSettingsPane audio_settings_pane_;
 		GeneralSettingsPane general_settings_pane_;
 		HelpSettingsPane help_settings_pane_;
+		ChannelsSettingsPane channels_settings_pane_;
 	};
 
 	SettingsComponent settings_content_;
